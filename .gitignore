@@ -1,0 +1,15 @@
+# This folder holds the whole course (decks, scripts, raw data, scratch files).
+# Only the threshold-fitting exercise belongs on GitHub, so everything is
+# ignored by default and the app's files are added back one by one.
+
+*
+
+!.gitignore
+!README.md
+!index.html
+!app.js
+!curve.js
+!data.js
+!plot.js
+!test.js
+!breakdown_curve_handout.pdf

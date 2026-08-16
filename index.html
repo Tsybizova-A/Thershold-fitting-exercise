@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Read a bond dissociation energy off a curve</title>
+<style>
+  :root {
+    color-scheme: light;
+    --ground:         #e9edf3;
+    --surface:        #f5f7fa;
+    --ink:            #17284a;
+    --ink-secondary:  #4b5b74;
+    --muted:          #74777e;
+    --grid:           #d7dde6;
+    --baseline:       #b7c0cd;
+    --heaviest:       #04070d;
+    --signal-red:     #c81f2e;
+    --font-sans: "Helvetica Neue", Helvetica, Arial, "Segoe UI", sans-serif;
+    --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas, "Liberation Mono", monospace;
+    --radius: 3px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --ground:         #0a0d12;
+      --surface:        #10141a;
+      --ink:            #dbe4f2;
+      --ink-secondary:  #a9b6c9;
+      --muted:          #9a9da4;
+      --grid:           #232830;
+      --baseline:       #3a4250;
+      --heaviest:       #fbfcff;
+      --signal-red:     #ef5b64;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground:         #0a0d12;
+    --surface:        #10141a;
+    --ink:            #dbe4f2;
+    --ink-secondary:  #a9b6c9;
+    --muted:          #9a9da4;
+    --grid:           #232830;
+    --baseline:       #3a4250;
+    --heaviest:       #fbfcff;
+    --signal-red:     #ef5b64;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 24px 16px 64px;
+    background: var(--ground);
+    font-family: var(--font-sans);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  main { max-width: 460px; margin: 0 auto; }
+
+  :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+
+  .stage {
+    padding: 16px;
+    margin: 0 0 20px;
+    border: 1px solid var(--baseline);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .stage.hidden { display: none; }
+
+  @keyframes stage-reveal {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .stage:not(.hidden) { animation: stage-reveal 220ms ease-out; }
+  @media (prefers-reduced-motion: reduce) {
+    .stage:not(.hidden) { animation: none; }
+  }
+
+  .stage h2 {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 700;
+    color: var(--muted);
+    margin: 0 0 10px;
+  }
+  .stage p { font-size: 14px; line-height: 1.5; margin: 0 0 14px; color: var(--ink); }
+
+  #chart, #chart-stage4 { margin-bottom: 16px; }
+  .source { font-size: 11px; line-height: 1.45; color: var(--muted); margin: -6px 0 14px; }
+  .echo { font-family: var(--font-mono); font-size: 12px; color: var(--muted); min-height: 15px; margin: 4px 0 10px; }
+  dl.assumptions { margin: 4px 0 16px; padding: 0; }
+  dl.assumptions dt { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--ink); margin-top: 10px; }
+  dl.assumptions dd { margin: 2px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-secondary); }
+
+  .field-row { margin-bottom: 12px; }
+  label { display: block; font-size: 13px; color: var(--ink-secondary); margin-bottom: 6px; }
+
+  input[type="number"] {
+    width: 100%;
+    font-family: var(--font-mono);
+    font-size: 15px;
+    padding: 8px 10px;
+    border: 1px solid var(--baseline);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--ink);
+  }
+  input[type="number"]:read-only {
+    opacity: 0.65;
+  }
+
+  button {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 10px 16px;
+    border: 1px solid var(--ink);
+    border-radius: var(--radius);
+    background: var(--ink);
+    color: var(--surface);
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  table.results-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 14px;
+    font-size: 13px;
+    font-family: var(--font-mono);
+  }
+  table.results-table th,
+  table.results-table td {
+    text-align: left;
+    padding: 7px 6px;
+    border-bottom: 1px solid var(--grid);
+  }
+  table.results-table th {
+    font-family: var(--font-sans);
+    color: var(--muted);
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  table.results-table td.num,
+  table.results-table th.num {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  table.results-table tr.true-row td {
+    font-weight: 700;
+    color: var(--heaviest);
+  }
+
+  @media (max-width: 480px) {
+    table.results-table thead {
+      position: absolute;
+      width: 1px; height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+    table.results-table, table.results-table tbody, table.results-table tr, table.results-table td {
+      display: block;
+      width: 100%;
+    }
+    table.results-table td { border-bottom: none; padding: 2px 0; }
+    table.results-table tr { border-bottom: 1px solid var(--grid); padding: 8px 0; }
+    table.results-table tr:last-child { border-bottom: none; }
+    table.results-table td:first-child {
+      font-family: var(--font-sans);
+      font-weight: 700;
+      padding-bottom: 4px;
+    }
+    table.results-table td:not(:first-child) {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    table.results-table td:not(:first-child)::before {
+      content: attr(data-label);
+      font-family: var(--font-sans);
+      font-weight: 400;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: var(--muted);
+      padding-right: 10px;
+    }
+  }
+
+  .slider-row { margin-bottom: 16px; }
+  .slider-row .slider-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+  }
+  .slider-row label { margin: 0; font-size: 13px; color: var(--ink-secondary); }
+  .slider-row .readout {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  input[type="range"] { width: 100%; accent-color: var(--ink); }
+
+  .callout {
+    margin: 4px 0 16px;
+    padding: 14px 16px;
+    border-left: 3px solid var(--ink);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    background: var(--ground);
+  }
+  .callout p:last-child { margin-bottom: 0; }
+
+  .effect { margin: 0 0 16px; }
+  .effect h3 { font-size: 14px; font-weight: 700; color: var(--ink); margin: 0 0 4px; }
+  .effect p { margin: 0; }
+</style>
+</head>
+<body>
+  <main>
+    <section id="stage-1" class="stage">
+      <h2>Step 1. Your estimate</h2>
+      <p>The curve below was measured by colliding AdoCbi<sup>+</sup> ions with xenon atoms. When a collision delivers enough energy, the cobalt–carbon bond breaks. The higher the collision energy, the more often this happens, which is why the signal rises.</p>
+      <p>Somewhere on this curve is the energy needed to break that bond. Decide where, and write the number down before you go on.</p>
+
+      <div id="chart"></div>
+      <p class="source">The vertical axis is the reaction cross section and the horizontal axis is the collision energy in the centre-of-mass frame. The 215 points are taken from Figure S16 of Kobylianskii, Widner, Kräutler and Chen, <em>J. Am. Chem. Soc.</em> <strong>2013</strong>, <em>135</em>, 13648.</p>
+
+      <div class="field-row">
+        <label for="estimate-input">Your estimate, in eV</label>
+        <input type="number" id="estimate-input" min="0" max="12" step="any" placeholder="0–12" />
+        <div class="echo" id="estimate-echo"></div>
+      </div>
+      <button id="lock-in-btn" disabled>Save my estimate</button>
+    </section>
+
+    <section id="stage-2" class="stage hidden">
+      <h2>Step 2. Two ways to estimate the bond dissociation energy</h2>
+      <p>Nobody can find the onset without first deciding what counts as the start of the rise. Here are two ways of deciding, applied to the curve you just looked at.</p>
+
+      <table class="results-table" id="methods-table">
+        <thead>
+          <tr>
+            <th>How the estimate was made</th>
+            <th class="num">Estimate (eV)</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <p id="spread-note"></p>
+      <button id="show-true-btn">Show the published value</button>
+    </section>
+
+    <section id="stage-3" class="stage hidden">
+      <h2>Step 3. What the paper reports</h2>
+      <div id="reveal-note"></div>
+      <button id="why-btn">Why is it so far off?</button>
+    </section>
+
+    <section id="stage-4" class="stage hidden">
+      <h2>Step 4. Why</h2>
+      <p>Three separate things stand between the shape of this curve and the energy you were trying to read off it. Move one slider at a time and watch what each one does. The grey curve is what you would see if none of them were happening.</p>
+
+      <div id="chart-stage4"></div>
+
+      <div class="slider-row">
+        <div class="slider-head">
+          <label for="slider-internal">Energy the ions are already carrying</label>
+          <span class="readout" id="readout-internal">0.00 eV</span>
+        </div>
+        <input type="range" id="slider-internal" min="0" max="2.0" step="0.05" value="0" />
+      </div>
+
+      <div class="slider-row">
+        <div class="slider-head">
+          <label for="slider-kinetic">Extra energy needed to make it break in time</label>
+          <span class="readout" id="readout-kinetic">0.00 eV</span>
+        </div>
+        <input type="range" id="slider-kinetic" min="0" max="3.0" step="0.05" value="0" />
+      </div>
+
+      <div class="slider-row">
+        <div class="slider-head">
+          <label for="slider-spread">Spread in the collision energy</label>
+          <span class="readout" id="readout-spread">0.00 eV</span>
+        </div>
+        <input type="range" id="slider-spread" min="0" max="1.0" step="0.05" value="0" />
+      </div>
+
+      <div class="effect">
+        <h3>The ions are already warm.</h3>
+        <p>They arrive carrying some vibrational energy from the source. An ion that already has some needs less from the collision, so the warmest ones break apart at lower collision energies than they otherwise would. This makes the curve start rising too early.</p>
+      </div>
+
+      <div class="effect">
+        <h3>The bond has to break in time.</h3>
+        <p>The ion has about sixty microseconds to fall apart before it reaches the detector. Just above the true bond energy, the energy is shared across all 504 of the molecule's vibrations and rarely concentrates in the cobalt–carbon bond, so the ion usually does not break in time. To see anything at all you have to push the energy well past the true value. This makes the curve start rising too late.</p>
+      </div>
+
+      <div class="effect">
+        <h3>The collision energy is not a single value.</h3>
+        <p>The ions do not all arrive with the same energy, and the xenon atoms are moving as well. This does not move the curve in either direction. It rounds off the corner, so there stops being a clear place where the rise begins.</p>
+      </div>
+
+      <p>The first two push in opposite directions, so you might hope they cancel. They do not, because they depend on completely different things: the first on how hot your source runs, the second on how large your molecule is.</p>
+
+      <button id="answer-btn">So what is the answer?</button>
+    </section>
+
+    <section id="stage-5" class="stage hidden">
+      <h2>Step 5. Where the published number comes from</h2>
+      <p>Since the curve cannot be read directly, the bond energy is obtained by fitting a model to it. The model has two parts.</p>
+      <p>The first predicts how fast the ion falls apart once it has enough energy. The second predicts what energy the ions actually have. Together the two parts predict what the curve would look like for any assumed bond energy. You try values until the prediction matches the points. The value that matches is the bond energy, and here it is 1.80 eV. Let's pick this up in the lecture.</p>
+
+      <button id="start-again-btn">Start again</button>
+    </section>
+
+    </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
